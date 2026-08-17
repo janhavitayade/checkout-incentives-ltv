@@ -1,1245 +1,640 @@
-# Checkout Incentives & LTV
+## Data Source
+
+**Olist Brazilian E-Commerce Public Dataset**  
+[Kaggle Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
+
+# Checkout Incentives & LTV — E-Commerce Customer Analytics Project
+
+A full-funnel analysis of the Brazilian **Olist e-commerce dataset**, moving from raw data auditing through Customer Lifetime Value (LTV) modeling, checkout incentive economics, product-category retention analysis, and a machine-learning system to predict repeat-purchase behavior.
+
+The project answers one central business question:
+
+> **Can Olist increase customer lifetime value by selectively incentivizing the right customers to make a second purchase — and if so, who, when, and how much should the incentive be?**
+
+---
+
+## Table of Contents
+
+1. [Project Overview](#project-overview)
+2. [Notebook 01 — Data Audit](#notebook-01--data-audit)
+3. [Notebook 02 — LTV Modeling](#notebook-02--ltv-modeling)
+4. [Notebook 03 — Checkout Incentive Analysis](#notebook-03--checkout-incentive-analysis)
+5. [Notebook 04 — High-Value Customer Conversion & Incentive Economics](#notebook-04--high-value-customer-conversion--incentive-economics)
+6. [Notebook 05 — Product Category Retention Analysis](#notebook-05--product-category-retention-analysis)
+7. [Notebook 06 — Customer Repeat-Purchase Prediction (ML)](#notebook-06--customer-repeat-purchase-prediction-ml)
+8. Notebook 07 — Executive Synthesis & Retention Strategy
+8. [Cross-Notebook Business Recommendations](#cross-notebook-business-recommendations)
+9. [Key Numbers Cheat Sheet](#key-numbers-cheat-sheet)
+10. [Limitations (Project-Wide)](#limitations-project-wide)
+11. [Tech Stack](#tech-stack)
+
+---
 
 ## Project Overview
 
-This project analyzes e-commerce customer and order data to investigate:
+This project analyzes e-commerce customer and order data to investigate four pillars:
 
-1. A/B Testing
-2. Customer Lifetime Value (LTV) Modeling
-3. Checkout Incentives
-4. Product Sense
+1. **A/B Testing** — statistical rigor, hypothesis testing, multiple-testing correction, experiment design
+2. **Customer Lifetime Value (LTV) Modeling** — historical value quantification and segmentation
+3. **Checkout Incentives** — economics, ROI, and targeting of discount campaigns
+4. **Product Sense** — translating statistical evidence into prioritized, budget-aware business decisions rather than blanket strategies
 
-The project uses the Brazilian Olist e-commerce dataset and is designed to answer both
-technical data-analysis questions and business-oriented questions around customers,
-orders, revenue, retention, incentives, and purchasing behavior.
+**Dataset:** Olist Brazilian e-commerce dataset — 9 relational tables (Customers, Geolocation, Orders, Order Items, Payments, Reviews, Products, Sellers, Category Translation), 99,441 order-linked customer records, 96,478 delivered orders.
 
----
-
-# 01 — Data Audit
-
-Before performing analysis or modeling, a comprehensive data audit was conducted to
-understand the structure, quality, completeness, consistency, and relationships between
-the datasets.
-
-The audit covered:
-
-- Dataset structure and data types
-- Missing values
-- Duplicate records
-- Invalid values
-- Date/time consistency
-- Order-status consistency
-- Payment consistency
-- Customer-order relationships
-- Cross-table relationships
-- Financial consistency
-- Review chronology
-- Geographic data quality
+**Guiding principle throughout the project:** flag data anomalies rather than blindly delete them; use `customer_unique_id` (not `customer_id`) for all customer-level metrics; prefer targeted, evidence-based incentive strategies over universal discounting; treat every "opportunity" number as a scenario estimate, not a causal guarantee, until validated by a controlled experiment.
 
 ---
 
-## Dataset Structure
+## Notebook 01 — Data Audit
 
-The project contains the following datasets:
+**Purpose:** Establish data quality, structure, and integrity before any modeling.
 
+### Dataset Structure
 | Dataset | Purpose |
 |---|---|
-| Customers | Customer information and location |
-| Geolocation | ZIP-code-level latitude, longitude and location information |
-| Orders | Order lifecycle and timestamps |
-| Order Items | Products purchased, sellers, prices and freight |
-| Payments | Payment methods, installments and payment amounts |
-| Reviews | Customer reviews and review scores |
+| Customers | Customer info & location |
+| Geolocation | ZIP-level lat/long |
+| Orders | Order lifecycle & timestamps |
+| Order Items | Products, sellers, price, freight |
+| Payments | Payment methods, installments, values |
+| Reviews | Review scores & comments |
 | Products | Product characteristics |
-| Sellers | Seller information and location |
-| Category Translation | Portuguese → English product category mapping |
+| Sellers | Seller info & location |
+| Category Translation | PT → EN category mapping |
+
+### Key Findings
+
+**Missing values**
+- `order_approved_at`: 160 missing; `order_delivered_carrier_date`: 1,783 missing; `order_delivered_customer_date`: 2,965 missing — concentrated in non-delivered order statuses (expected).
+- Review titles: 87,656 missing; review messages: 58,247 missing (optional field, expected).
+- Products: 610 missing category/name/description/photo-count values; 2 missing dimensional values.
+- **24 delivered orders** anomalously missing lifecycle timestamps — flagged, not deleted.
+
+**Duplicates**
+- Geolocation: 261,831 exact duplicate rows out of 1,000,163 (not auto-removed — legitimate coordinate reuse is possible).
+- All other tables: 0 duplicates.
+- 17,781 of 19,015 ZIP prefixes show multiple latitude values → geolocation table requires validation before geospatial use.
+
+**Customer identity**
+- 99,441 `customer_id` rows but only **96,096 unique `customer_unique_id`** values.
+- 2,997 customers hold multiple `customer_id` records (max 17 for one customer).
+- **Conclusion: all customer-level metrics (LTV, repeat purchases) must use `customer_unique_id`.**
+
+**Referential integrity**
+- Customer → Order: complete (0 orphans).
+- Payment → Order: 1 order (ID `30710`) missing a payment record despite being delivered with $134.97 + $8.49 freight in items and a 1-star "never received" review — flagged as incomplete data, not proof of non-payment.
+- Order → Item: 775 orders have no item record.
+- Order → Review: 768 orders have no review (expected — reviews are optional).
+
+**Financial consistency**
+- Of 98,665 orders with both item and payment data, **98,284 (99.61%) match exactly**.
+- 381 orders (0.39%) show discrepancies: mean abs. difference $8.58, median $3.77, max $182.81.
+- 291 orders: payment > item total; 90 orders: payment < item total.
+- Discrepancies correlate with installment count (10-installment orders average $18.81 diff; 12-installment average $24.83) and payment type (90.55% of discrepancies tied to credit cards).
+- 178 of the 381 discrepant orders are under $100 — nearly half the discrepant set.
+
+**Chronological anomalies**
+- 166 orders: shipment before purchase.
+- 23 orders: delivery before shipment.
+- 8,320 reviews created before recorded delivery (271 before shipment, 6 before purchase) — flagged as possible survey-dispatch artifacts, not automatically invalid.
+
+**Payment anomalies**
+- 9 zero-value payment records (mostly vouchers).
+- 2 credit-card records with invalid zero installments.
+- 3 `not_defined` payment-type records, all tied to canceled $0 orders.
+
+**Geographic concentration**
+- SP: 40,302 customers, $5.2M sales — dominant.
+- RJ: 12,384 customers, $1.8M.
+- MG: 11,259 customers, $1.6M.
+- These 3 states dominate both customer count and order activity; remaining 24 states trail far behind.
+
+**Repeat purchase behavior (first look)**
+- 93,099 customers made exactly 1 order (96.88%).
+- 2,997 customers made 2+ orders (3.12%); max 17 orders by one customer.
+
+### Audit Conclusion
+The dataset is structurally sound for downstream modeling. No records were deleted purely for being anomalous — everything is flagged for investigation, preserving data fidelity for LTV modeling, A/B testing, incentive analysis, and segmentation.
 
 ---
 
-# Audit Findings
+## Notebook 02 — LTV Modeling
 
-## 1. Data Types
+**Objective:** Quantify economic customer value and identify segments most relevant for checkout incentives. Uses **historical LTV** (total amount spent to date), not a predicted future value.
 
-| Dataset | Finding |
+**LTV formula:** `LTV = total payment value across all recorded orders`, aggregated at `customer_unique_id` level.
+
+### Overall LTV
+| Metric | Value |
 |---|---|
-| Customers | Correct types: IDs as strings, ZIP code as integer |
-| Geolocation | ZIP code as integer, latitude/longitude as numeric |
-| Orders | IDs as strings; order timestamps converted to datetime |
-| Order Items | IDs as strings/integer; price and freight as numeric |
-| Payments | IDs as strings; payment values and installments numeric |
-| Reviews | IDs as strings; review score numeric; review dates converted to datetime |
-| Products | Product ID as string; product attributes numeric where applicable |
-| Sellers | IDs as strings; ZIP code as integer |
-| Category Translation | Category names stored as strings |
+| Total customers | 96,096 |
+| Total revenue | $16,008,872.12 |
+| Average LTV | $166.59 |
+| Median LTV | $108.00 |
+| Min / Max LTV | $0.00 / $13,664.08 |
 
-Date columns requiring analysis were converted from strings to datetime.
+**Inference:** Mean > median → strongly right-skewed spending. A minority of high-spending customers pull the average up. Report both mean (aggregate forecasting) and median (typical customer).
 
----
-
-# 2. Missing Values
-
-| Dataset | Column | Missing Values |
-|---|---|---:|
-| Orders | order_approved_at | 160 |
-| Orders | order_delivered_carrier_date | 1,783 |
-| Orders | order_delivered_customer_date | 2,965 |
-| Reviews | review_comment_title | 87,656 |
-| Reviews | review_comment_message | 58,247 |
-| Products | product_category_name | 610 |
-| Products | product_name_lenght | 610 |
-| Products | product_description_lenght | 610 |
-| Products | product_photos_qty | 610 |
-| Products | product_weight_g | 2 |
-| Products | product_length_cm | 2 |
-| Products | product_height_cm | 2 |
-| Products | product_width_cm | 2 |
-
-Other datasets contained no missing values.
-
-### Interpretation
-
-Missing order timestamps are strongly related to the order lifecycle. For example,
-orders that were not delivered may naturally lack a customer-delivery timestamp.
-
-Review titles and messages contain substantial missingness because customers are not
-required to provide written comments.
-
-Product-level missing values are concentrated in a small number of products.
-
----
-
-# 3. Order Status vs Missing Timestamps
-
-| Order Status | Total | Approved Missing | Shipment Missing | Delivered Missing |
+### One-Time vs. Repeat Customers
+| Type | Customers | % | Avg LTV | Median LTV |
 |---|---:|---:|---:|---:|
-| approved | 2 | 0/2 | 2/2 | 2/2 |
-| canceled | 625 | 141/625 | 550/625 | 619/625 |
-| created | 5 | 5/5 | 5/5 | 5/5 |
-| delivered | 96,478 | 14/96,478 | 2/96,478 | 8/96,478 |
-| invoiced | 314 | 0/314 | 314/314 | 314/314 |
-| processing | 301 | 0/301 | 301/301 | 301/301 |
-| shipped | 1,107 | 0/1,107 | 0/1,107 | 1,107/1,107 |
-| unavailable | 609 | 0/609 | 609/609 | 609/609 |
+| One-time | 93,099 | 96.88% | $161.82 | $105.70 |
+| Repeat | 2,997 | 3.12% | $314.99 | $225.84 |
 
-### Important Finding
+Repeat customers have **~1.95× higher mean LTV** and **~2.14× higher median LTV**. Only 3.12% of customers repeat — this is the central behavioral gap the whole project addresses.
 
-There are **96,478 delivered orders**, but:
+### Revenue Contribution
+| Type | Customer % | Revenue % |
+|---|---:|---:|
+| One-time | 96.88% | 94.10% |
+| Repeat | 3.12% | 5.90% |
 
-- 14 are missing approval timestamps
-- 2 are missing shipment timestamps
-- 8 are missing customer-delivery timestamps
+One-time customers generate most *absolute* revenue simply due to volume — but per-customer, repeat customers are far more valuable ($314.99 vs $161.82).
 
-These records should be treated as data-quality anomalies because a delivered order
-would normally be expected to contain the relevant lifecycle timestamps.
-
----
-
-# 4. Duplicate Records
-
-| Dataset | Exact Duplicate Rows |
+### LTV Distribution Bands
+| Band | % of Customers |
 |---|---:|
-| Customers | 0 |
-| Geolocation | 261,831 |
-| Orders | 0 |
-| Order Items | 0 |
-| Payments | 0 |
-| Reviews | 0 |
-| Products | 0 |
-| Sellers | 0 |
-| Category Translation | 0 |
+| <$50 | 16.49% |
+| $50–100 | 29.71% |
+| $100–250 | 38.98% |
+| $250–500 | 10.15% |
+| $500–1000 | 3.40% |
+| $1000–2000 | 1.03% |
+| $2000+ | 0.23% |
 
-The geolocation dataset contains many repeated records.
+~46.2% of customers have LTV below $100; only 4.67% exceed $500.
 
-The dataset contains:
-
-- 1,000,163 total geolocation rows
-- 261,831 exact duplicate rows
-- 19,015 unique ZIP prefixes
-- 718,463 unique coordinate pairs
-
-Geolocation duplicates should not automatically be treated as errors because multiple
-records can legitimately refer to the same geographic location.
-
----
-
-# 5. Geolocation Quality
-
-| Metric | Result |
+### Revenue Concentration (Pareto)
+| Segment | Revenue Share |
 |---|---:|
-| Unique ZIP prefixes | 19,015 |
-| Unique coordinate pairs | 718,463 |
-| ZIP prefixes with multiple latitude values | 17,781 |
-| ZIP prefixes with multiple longitude values | 17,780 |
+| Top 1% | 10.48% |
+| Top 5% | 27.04% |
+| Top 10% | 38.51% |
+| Top 20% | 53.77% |
 
-An additional issue was identified in the raw geolocation data: latitude/longitude
-values appeared inconsistent with expected geographic coordinate ranges.
+**Business implication:** A blanket incentive strategy wastes budget on low-incremental-value customers. Target by expected value and responsiveness.
 
-Therefore, the geolocation table should be treated carefully and should not be blindly
-used for geographic modeling without further validation.
+### LTV by Order Count
+| Orders | Customers | Avg LTV |
+|---:|---:|---:|
+| 1 | 93,099 | $161.82 |
+| 2 | 2,745 | $294.85 |
+| 3 | 203 | $473.39 |
+| 4 | 30 | $779.13 |
+| 5–17 | 19 | (small-sample, not generalizable) |
 
----
+Clear monotonic pattern: more purchases → higher LTV. Extreme order-count groups have tiny samples and shouldn't be generalized.
 
-# 6. Order Status Distribution
+### High-Value Threshold
+Threshold set at **LTV = $319.57** (approx. 90th percentile):
 
-| Order Status | Orders |
+| Segment | Customers | Avg LTV | Revenue Share |
+|---|---:|---:|---:|
+| High-value | 9,611 (10%) | $641.55 | 38.52% |
+| Standard | 86,485 (90%) | $113.81 | 61.48% |
+
+### Customer Lifetime & Return Timing
+- One-time customers: lifetime = 0 days by definition.
+- Repeat customers: avg lifetime 87.31 days, median 33.66 days.
+- Time to second purchase: mean 80.35 days, median 27.92 days, max 608.98 days (right-skewed).
+
+**Second-purchase timing distribution:**
+| Window | % of Repeat Customers |
 |---|---:|
-| delivered | 96,478 |
-| shipped | 1,107 |
-| canceled | 625 |
-| unavailable | 609 |
-| invoiced | 314 |
-| processing | 301 |
-| created | 5 |
-| approved | 2 |
+| 1–7 days | 36.60% |
+| ≤30 days (cumulative) | 51.1% |
+| ≤60 days | 61.8% |
+| ≤90 days | 68.7% |
+| ≤180 days | 82.8% |
+| ≤365 days | 97.1% |
 
-The overwhelming majority of orders are delivered.
+**Business implication:** Early post-purchase weeks are a key intervention window, but a single fixed incentive window would miss many later returners.
 
----
-
-# 7. Payment Type Distribution
-
-| Payment Type | Records |
-|---|---:|
-| credit_card | 76,795 |
-| boleto | 19,784 |
-| voucher | 5,775 |
-| debit_card | 1,529 |
-| not_defined | 3 |
-
-Three payment records have `payment_type = not_defined`.
-
-All three have:
-
-- payment_value = 0
-- payment_installments = 1
-
-These records require investigation rather than automatic deletion.
-
----
-
-# 8. Review Score Distribution
-
-| Review Score | Reviews |
-|---:|---:|
-| 1 | 11,424 |
-| 2 | 3,151 |
-| 3 | 8,179 |
-| 4 | 19,142 |
-| 5 | 57,328 |
-
-The observed review-score range is:
-
-- Minimum = 1
-- Maximum = 5
-- Unique scores = 1, 2, 3, 4, 5
-
-Therefore, **5 is the highest possible rating and 1 is the lowest** within this
-dataset.
-
-The distribution is heavily concentrated toward high scores, particularly score 5.
-
----
-
-# 9. Customer Geographic Distribution
-
-| State | Unique Customers | Orders | Sales Value | Unique Sellers |
+### Four-Quadrant Incentive Segmentation
+| Segment | Customers | % of Base | Avg LTV | Revenue Share |
 |---|---:|---:|---:|---:|
-| SP | 40,302 | 41,746 | 5,202,955.05 | 2,549 |
-| RJ | 12,384 | 12,852 | 1,824,092.67 | 1,751 |
-| MG | 11,259 | 11,635 | 1,585,308.03 | 1,664 |
-| RS | 5,277 | 5,466 | 750,304.02 | 1,232 |
-| PR | 4,882 | 5,045 | 683,083.76 | 1,232 |
-| SC | 3,534 | 3,637 | 520,553.34 | 1,038 |
-| BA | 3,277 | 3,380 | 511,349.99 | 967 |
-| DF | 2,075 | 2,140 | 302,603.94 | 786 |
-| ES | 1,964 | 2,033 | 275,037.31 | 738 |
-| GO | 1,952 | 2,020 | 294,591.95 | 724 |
-| PE | 1,609 | 1,652 | 262,788.03 | 638 |
-| CE | 1,313 | 1,336 | 227,254.71 | 528 |
-| PA | 949 | 975 | 178,947.81 | 465 |
-| MT | 876 | 907 | 156,453.53 | 465 |
-| MA | 726 | 747 | 119,648.22 | 375 |
-| MS | 694 | 715 | 116,812.64 | 404 |
-| PB | 519 | 536 | 115,268.08 | 303 |
-| PI | 482 | 495 | 86,914.08 | 297 |
-| RN | 474 | 485 | 83,034.98 | 275 |
-| AL | 401 | 413 | 80,314.81 | 252 |
-| SE | 342 | 350 | 58,920.85 | 212 |
-| TO | 273 | 280 | 49,621.74 | 199 |
-| RO | 240 | 253 | 46,140.64 | 182 |
-| AM | 143 | 148 | 22,356.84 | 118 |
-| AC | 77 | 81 | 15,982.95 | 71 |
-| AP | 67 | 68 | 13,474.30 | 63 |
-| RR | 45 | 46 | 7,829.43 | 39 |
+| **High-value one-time** | 45,432 | 47.28% | $264.91 | **75.18%** |
+| High-value repeat | 2,634 | 2.74% | $347.05 | 5.71% |
+| Low-value one-time | 47,667 | 49.60% | $63.55 | 18.92% |
+| Low-value repeat | 363 | 0.38% | $82.33 | 0.19% |
 
-SP, RJ and MG dominate both customer counts and order activity.
+**The single most important finding of the notebook:** the **high-value one-time** segment is less than half the customer base but drives three-quarters of revenue, and has *not yet* repeated. This becomes the primary incentive target for the rest of the project.
 
-However, customer count alone does not prove demand. Orders and sales value were
-therefore included to distinguish registered customers from actual purchasing
-activity.
+### Notebook Limitations
+This is **historical**, not predictive, LTV. It does not: predict future purchases, estimate response probability to incentives, calculate incremental revenue caused by incentives, establish causality, account for margin, or subtract incentive cost.
 
 ---
 
-# 10. Customer Identity
+## Notebook 03 — Checkout Incentive Analysis
 
-| Metric | Result |
-|---|---:|
-| Customers rows | 99,441 |
-| Unique customer_id | 99,441 |
-| Unique customer_unique_id | 96,096 |
-| Customers with multiple customer_id records | 2,997 |
-| Maximum customer_id records for one customer_unique_id | 17 |
+**Objective:** Translate Notebook 02 findings into a business-focused incentive strategy — who to target, when, and whether the economics work.
 
-This distinction is important:
-
-`customer_id` identifies a customer record associated with an order, whereas
-`customer_unique_id` represents the underlying unique customer.
-
-Therefore, `customer_unique_id` should be used when calculating customer-level
-metrics such as repeat purchases and LTV.
-
----
-
-# 11. Customer Repeat Purchase Behavior
-
-| Orders per Customer | Customers |
-|---:|---:|
-| 1 | 93,099 |
-| 2 | 2,745 |
-| 3 | 203 |
-| 4 | 30 |
-| 5 | 8 |
-| 6 | 6 |
-| 7 | 3 |
-| 9 | 1 |
-| 17 | 1 |
-
-Overall:
-
-| Metric | Result |
-|---|---:|
-| One-order customers | 93,099 |
-| Repeat customers | 2,997 |
-| Maximum orders by one customer | 17 |
-
-This is particularly important for the upcoming LTV analysis because the dataset contains
-a large number of one-time customers and a smaller repeat-customer population.
-
----
-
-# 12. Customer → Order Integrity
-
-| Check | Result |
-|---|---:|
-| Orders without customer_id match | 0 |
-| Customers without an order | 0 |
-| Orders without customer_unique_id | 0 |
-
-The customer-to-order relationship is complete.
-
----
-
-# 13. Payment → Order Integrity
-
-| Check | Result |
-|---|---:|
-| Payments without matching order | 0 |
-| Orders without payment records | 1 |
-
-Only one order lacks a corresponding payment record.
-
-Order:
-
-`30710`
-
-The order is marked as delivered and contains order items, but no payment record
-exists.
-
-This should be treated as a missing/incomplete payment record rather than assuming that
-the customer never paid.
-
----
-
-# 14. Payment Records per Order
-
-| Payment Records | Orders |
-|---:|---:|
-| 1 | 96,479 |
-| 2 | 2,382 |
-| 3 | 301 |
-| 4 | 108 |
-| 5 | 52 |
-| 6 | 36 |
-| 7 | 28 |
-| 8 | 11 |
-| 9 | 9 |
-| 10 | 5 |
-| 11 | 8 |
-| 12 | 8 |
-| 13 | 3 |
-| 14 | 2 |
-| 15 | 2 |
-| 19 | 2 |
-| 21 | 1 |
-| 22 | 1 |
-| 26 | 1 |
-| 29 | 1 |
-
-There are 2,961 orders with multiple payment records.
-
-The maximum number of payment records for one order is 29.
-
-Multiple payment records are possible because an order may involve multiple payment
-transactions, vouchers or payment methods.
-
----
-
-# 15. Order Items per Order
-
-| Items | Orders |
-|---:|---:|
-| 1 | 88,863 |
-| 2 | 7,516 |
-| 3 | 1,322 |
-| 4 | 505 |
-| 5 | 204 |
-| 6 | 198 |
-| 7 | 22 |
-| 8 | 8 |
-| 9 | 3 |
-| 10 | 8 |
-| 11 | 4 |
-| 12 | 5 |
-| 13 | 1 |
-| 14 | 2 |
-| 15 | 2 |
-| 20 | 2 |
-| 21 | 1 |
-
-There are 9,803 orders containing multiple items.
-
-The maximum number of items in one order is 21.
-
----
-
-# 16. Order Item Financial Data
-
-| Metric | Price | Freight |
+### Repeat-Purchase Timing Windows
+| Window | Customers | Avg 2nd-Order Value |
 |---|---:|---:|
-| Mean | 120.65 | 19.99 |
-| Median | 74.99 | 16.26 |
-| Minimum | 0.85 | 0.00 |
-| Maximum | 6,735.00 | 409.68 |
+| Same day | 276 | $134.36 |
+| 1–7 days | 821 | $152.31 |
+| 8–30 days | 433 | $162.08 |
+| 31–60 days | 320 | $156.45 |
+| 61–90 days | 208 | $151.36 |
+| 91–180 days | 424 | $144.10 |
+| 180+ days | 515 | $141.84 |
 
-No negative prices or negative freight values were found.
+276 same-day repeats vs 2,721 next-day-or-later — most repeat behavior is genuine return behavior, not order-splitting. Second-order value stays fairly stable ($134–$162) across all windows, so timing doesn't strongly bias order value. Repeat behavior spans multiple horizons — a single short campaign window would miss a large share of opportunity (515 customers return after 180+ days).
 
-There were 383 records with zero freight value.
+### First-Order Value vs. Repeat Rate (Counter-Intuitive Finding)
+| First-Order Band | Repeat Rate |
+|---|---:|
+| <$50 | 3.41% |
+| $50–99 | 3.28% |
+| $100–249 | 3.17% |
+| $250–499 | 2.89% |
+| $500–999 | 2.73% |
+| $1,000+ | 2.03% |
+
+**Repeat rate DECREASES as first-order value increases.** High spend does not predict repeat likelihood — high-value customers are attractive because of monetary value, not because they're more likely to return.
+
+### Weak Differentiators (Tested, Rejected)
+- **Geography:** repeat rates range 1.52%–5.26% by state, but small states are statistically unreliable; large states (SP: 3.31% on 39,150 customers) provide the strongest evidence.
+- **Delivery speed:** one-time avg 12.57 days vs repeat avg 12.39 days — negligible (0.18-day) difference.
+- **Review behavior:** one-time avg score 4.15 vs repeat 4.16; review rates 99.34% vs 99.23% — negligible difference.
+
+**Conclusion:** none of these are strong targeting variables. Monetary value + purchase history remain the strongest rationale.
+
+### Target Segment & Opportunity Sizing
+Target: **45,432 high-value one-time customers** ($12.04M historical revenue, 75.18% of revenue share).
+
+Applying the historical 3.12% repeat rate to this segment:
+- Estimated conversions: **1,417**
+- Avg second-order value: **$146.94**
+- **Estimated incremental revenue ≈ $208,219.24**
+
+### Conversion-Rate Scenarios
+| Conversion Rate | Conversions | Est. Revenue |
+|---:|---:|---:|
+| 1% | 454 | $66,710.76 |
+| 3% | 1,363 | $200,279.22 |
+| 5% | 2,272 | $333,847.68 |
+| 10% | 4,543 | $667,548.42 |
+
+### Incentive Cost / ROI Sensitivity (2nd-order value = $146.94)
+| Incentive | Net Rev/Conversion | ROI |
+|---:|---:|---:|
+| $5 | $141.94 | 2,838.80% |
+| $10 | $136.94 | 1,369.40% |
+| $25 | $121.94 | 487.76% |
+| $50 | $96.94 | 193.88% |
+| $75 | $71.94 | 95.92% |
+| $100 | $46.94 | 46.94% |
+| $125 | $21.94 | 17.55% |
+| $146.94 | $0.00 | 0.00% (break-even) |
+
+**Key insight:** ROI% is constant across conversion-rate scenarios for a fixed incentive amount — because both revenue and cost scale linearly with conversions. **Conversion rate determines scale of opportunity; incentive size determines per-conversion economics.** Bigger discounts are not automatically better — value erodes as incentive approaches the $146.94 ceiling.
+
+### Business Recommendation
+Target **high-value one-time customers only**. Test multiple incentive levels via **A/B experiment** (Control / Treatment A-low / Treatment B-moderate / Treatment C-high), measuring **incremental repeat-purchase rate vs. control** (e.g., 4.5% treatment − 3.1% control = 1.4pp uplift), not raw conversion count.
+
+### Important Caveat
+This is a **scenario model, not a causal estimate**. Historical 3.12% repeat rate and $146.94 second-order value describe what happened, not what an incentive will cause. A controlled experiment is required to establish causal incremental lift.
 
 ---
 
-# 17. Payment Financial Data
+## Notebook 04 — High-Value Customer Conversion & Incentive Economics
 
-| Metric | Payment Value | Installments |
+**Objective:** Deepen the business case for targeting high-value one-time customers and formalize incentive economics.
+
+### LTV vs. Repeat Propensity (Median Cutoff = $108)
+| Segment | Customers | Repeat Rate | Avg LTV |
+|---|---:|---:|---:|
+| Low-value | 48,030 | 0.76% | $63.69 |
+| High-value | 48,066 | **5.48%** | $269.41 |
+
+**High-value customers repeat 7.21× more often than low-value customers** (5.48% / 0.76%). This is a stronger, more direct signal than Notebook 03's aggregate 1.95× LTV multiplier — it shows value *predicts* repeat propensity, not just repeat value.
+
+### Target Segment Breakdown by First-Order Band
+| Band | Customers | Revenue | Customer Share | Revenue Share |
+|---|---:|---:|---:|---:|
+| $100–249 | 32,516 | $5.25M | 71.57% | 43.60% |
+| $250–499 | 8,825 | $2.98M | 19.42% | 24.73% |
+| $500–999 | 2,969 | $2.02M | 6.54% | 16.80% |
+| $1,000+ | 1,122 | $1.79M | 2.47% | 14.87% |
+
+**Inference:** The segment isn't homogeneous. High-spend sub-tiers (6.54% + 2.47% of customers) contribute disproportionately (16.80% + 14.87% of revenue) — supports a tiered incentive strategy.
+
+### Target Segment Summary
+- Target customers: **45,432**
+- Avg LTV: $264.91 / Median LTV: $180.21
+- Customer share: 47.28% / Revenue share: **75.18%**
+- High-value repeat rate: 5.48% vs low-value 0.76% (**7.21× multiple**)
+- Avg second-order value (refined): **$148.51**
+
+### Incentive Scenario Grid (revised 2nd-order value $148.51)
+At **$25 incentive**, ROI is constant at **494.06%** regardless of conversion rate:
+| Conversion | Conversions | Est. Revenue | Incentive Cost | Net Revenue |
+|---:|---:|---:|---:|---:|
+| 1% | 454 | $67,425.30 | $11,350 | $56,075.30 |
+| 3% | 1,363 | $202,424.41 | $34,075 | $168,349.41 |
+| 5% | 2,272 | $337,423.52 | $56,800 | $280,623.52 |
+| 10% | 4,543 | $674,698.53 | $113,575 | $561,123.53 |
+
+### Full Incentive-Cost Sensitivity Table
+| Incentive | Net Rev/Conv | ROI |
+|---:|---:|---:|
+| $5 | $143.51 | 2,870.28% |
+| $25 | $123.51 | 494.06% |
+| $50 | $98.51 | 197.03% |
+| $100 | $48.51 | 48.51% |
+| $148.51 | $0.00 | 0.00% |
+
+### Reference Experiment Design
+- Target: 45,432 high-value one-time customers
+- Assumed conversion: 5% → 2,272 conversions
+- 2nd-order value: $148.51 → $337,423.52 revenue
+- Incentive: $25/conversion → $56,800 cost
+- **Net incremental revenue: $280,623.52 | Modeled ROI: 494.06%**
+
+**$25 is chosen as reference treatment** because it's well below the $148.51 ceiling, leaves ~$123.51/conversion before other costs, and gives a meaningful, testable ROI signal for an A/B test vs. control.
+
+### Caveat
+Explicitly labeled a **hypothetical/scenario analysis**: the 5% conversion rate is an assumption, not a forecast; $148.51 and $25 are planning inputs; no causal claim is made.
+
+---
+
+## Notebook 05 — Product Category Retention Analysis
+
+**Objective:** Determine whether retention/incentive efforts should be prioritized by product category rather than applied uniformly.
+
+### Dataset
+112,650 product-item observations across 72 categories; total item revenue (price + freight) = **$15,843,553.24**.
+
+### Repeat-Item Baseline
+- One-time items: 105,082 | Repeat items: 7,568 → **overall repeat-item share = 6.72%** (used as the baseline for all category comparisons).
+
+### Revenue Concentration by Category
+Top 10 categories (health_beauty, watches_gifts, bed_bath_table, sports_leisure, computers_accessories, furniture_decor, housewares, cool_stuff, auto, garden_tools) account for **62.32%** of total category revenue.
+
+### High Repeat-Share Categories (raw, before filtering for sample size)
+`diapers_and_hygiene` (25.64%, n=39), `arts_and_craftmanship` (20.83%, n=24), `home_appliances` (17.90%, n=771), `fashio_female_clothing` (16.67%, n=48) — **small-sample categories were flagged as unreliable despite high percentages.**
+
+### Repeat vs. One-Time Item Value (Counter-Intuitive Finding)
+High repeat share ≠ high spend per repeat item. Examples:
+- `home_appliances`: 17.90% repeat share but repeat customers spend **37.91% less** per item than one-time customers.
+- `furniture_bedroom`: repeat customers spend **54.86% less**.
+- `small_appliances`: repeat customers spend **85.97% MORE** (positive exception).
+
+### Statistical Testing
+- **Mann–Whitney U test** per category (non-parametric, handles skew) for one-time vs repeat item revenue.
+- **Benjamini–Hochberg FDR correction** applied across all category tests to control false discovery from multiple comparisons.
+- 12 categories remained statistically significant post-correction (e.g., computers_accessories p=0.0003, health_beauty p=0.0003, home_appliances p=0.0009, bed_bath_table p=0.0027).
+
+**Key inference:** statistical significance ≠ business priority. `health_beauty` is significant but below the repeat-share baseline, so it was not prioritized.
+
+### Prioritization Framework
+**High Priority** requires ALL THREE:
+1. Repeat-item share above 6.72% baseline
+2. Statistically significant (post-FDR)
+3. Category revenue ≥ $50,000
+
+### Final High-Priority Categories
+| Category | Repeat Share | Lift | Revenue | Revenue Share |
+|---|---:|---:|---:|---:|
+| bed_bath_table | 10.02% | +3.30pp | $1,241,681.72 | 7.84% |
+| computers_accessories | 7.05% | +0.33pp | $1,059,272.40 | 6.69% |
+| furniture_decor | 9.85% | +3.13pp | $902,511.79 | 5.70% |
+| fashion_bags_accessories | 12.95% | +6.23pp | $184,273.54 | 1.16% |
+| home_appliances | 17.90% | +11.18pp | $94,990.43 | 0.60% |
+
+**Combined:** 30,078 items, 2,888 repeat items, **9.60% repeat-item share** (vs 6.72% baseline), **$3,482,729.88 revenue (21.98% of total category revenue)**.
+
+### Category-Level Business Insight
+`bed_bath_table` is the strongest overall candidate — combines high repeat propensity, large volume, significant revenue ($1.24M), and statistically significant evidence, with only a modest (-4.89%) value drop per repeat item. `home_appliances` shows the strongest frequency signal (17.90% share) but the weakest per-item economics (-37.91%) — suggests frequency-based incentives there need careful margin evaluation, not blanket discounting.
+
+**Core takeaway:** the category with the *highest repeat propensity* is not necessarily the category with the *highest monetary value per repeat purchase*. Retention strategy needs 3 dimensions: (1) likelihood of repeat, (2) commercial scale, (3) value of the resulting repeat purchase.
+
+### Limitations
+Observational (not causal); repeat status is historical only (may undercount future repeaters); analysis is item-level, not exactly equal to customer-level probability; uses revenue, not profit (no cost/margin data); statistical vs. business significance can diverge; small-sample categories intentionally excluded from prioritization.
+
+---
+
+## Notebook 06 — Customer Repeat-Purchase Prediction (ML)
+
+**Objective:** Test whether **first-order behavior** can predict/rank customers by likelihood of repeat purchase, to support targeted retention campaigns.
+
+### Pipeline
+```
+Customer/Order Data → Customer Identity Analysis → Repeat-Customer Definition →
+First-Order Feature Engineering → Data Quality Filtering → Statistical Testing →
+Multiple-Testing Correction → Feature Matrix → Train/Test Split → Multiple ML Models →
+Model Evaluation → Threshold Optimization → Top-K Targeting → Baseline Comparison →
+Business Recommendation
+```
+
+### Environment
+Pandas, NumPy, Matplotlib, Scikit-learn, SciPy, Statsmodels, XGBoost 3.4.1, LightGBM 4.7.0, CatBoost 1.2.10, Statsmodels 0.14.6.
+
+### Target Definition & Class Imbalance
+- Unique customers: 96,096 → One-time 93,099 (96.88%) / Repeat 2,997 (3.12%).
+- This is a **severely imbalanced binary classification problem**.
+
+### Data Quality Filtering
+- 707 customers had missing first-order features (82.32% tied to "unavailable" order status, 16.55% canceled) — excluded.
+- Final modeling population restricted to `order_status = delivered`: **93,253 customers** (2,843 excluded from 96,096).
+- Final target split: One-time 90,379 (96.92%) / Repeat 2,874 (3.08%).
+
+### First-Order Behavior: One-Time vs. Repeat (Counter-Intuitive Finding)
+| Metric | One-time | Repeat | Diff |
+|---|---:|---:|---:|
+| Avg first-order value | $160.65 | $146.83 | −8.60% |
+| Avg items | 1.14 | 1.22 | +7.06% |
+| Merchandise value | $137.88 | $124.05 | −10.03% |
+| Freight | $22.77 | $22.78 | +0.06% |
+
+**Repeat customers spent LESS on their first order but bought slightly MORE items** — reinforcing Notebook 03's finding that high initial spend ≠ high repeat likelihood, while item count is a positive signal.
+
+### Statistical Testing (α = 0.05, FDR-corrected)
+**Mann-Whitney U (numerical features):**
+| Feature | Significant? |
+|---|---|
+| First-order items | Yes |
+| Product count | Yes |
+| Merchandise value | Yes |
+| Freight value | No |
+| Total value | Yes |
+
+**Chi-square (categorical/temporal features):**
+| Feature | Significant? |
+|---|---|
+| Customer state | No (p=0.2718) |
+| First-order month | Yes (p<0.000001) |
+| Day of week | No (p=0.9088) |
+| First-order hour | Yes (p=0.000028) |
+
+**6 features survived Benjamini-Hochberg FDR correction:** first-order items, product count, merchandise value, total value, first-order month, first-order hour.
+
+### Modeling Setup
+- Feature matrix: 93,253 × 9 features → 96.92% / 3.08% class split.
+- Stratified train/test split: 74,602 train / 18,651 test.
+- **Why accuracy is misleading:** predicting "always one-time" already yields 96.92% accuracy — so PR-AUC, F1, recall, Top-K lift are the real metrics of interest.
+
+### Model Comparison
+| Model | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC |
+|---|---:|---:|---:|---:|---:|---:|
+| CatBoost | 0.6121 | 0.0384 | 0.4817 | 0.0711 | **0.5770** | **0.0432** |
+| XGBoost | 0.6248 | 0.0397 | 0.4817 | **0.0734** | 0.5643 | 0.0424 |
+| LightGBM | 0.6620 | 0.0379 | 0.4087 | 0.0694 | 0.5571 | 0.0401 |
+| Random Forest | 0.9321 | 0.0436 | 0.0574 | 0.0495 | 0.5631 | 0.0397 |
+| Logistic Regression | 0.5496 | 0.0362 | 0.5304 | 0.0677 | 0.5475 | 0.0390 |
+| AdaBoost | **0.9692** | 0.0000 | 0.0000 | 0.0000 | 0.5282 | 0.0332 |
+
+**Critical inference:** AdaBoost's 96.92% accuracy comes from predicting every customer as "one-time" — 0% repeat recall, functionally useless. Random Forest's 93.21% accuracy hides only 5.74% repeat recall. **Accuracy is explicitly rejected as the primary selection metric.**
+
+### Selected Models
+- **Primary ranking model: CatBoost** — best ROC-AUC (0.5770), best PR-AUC (0.0432), best broader Top-K performance.
+- **Alternative model: XGBoost** — best F1 (0.0734), strong recall (48.17%).
+- **Rejected: AdaBoost** (zero recall). **Not preferred: Random Forest** (poor recall despite high accuracy).
+
+### Feature Importance (Random Forest)
+First-order freight value (0.1985), total value (0.1960), merchandise value (0.1838), hour (0.1324), month (0.1005) dominate. Note: importance = predictive contribution, not causality.
+
+### Threshold Optimization
+Lowering the classification threshold (0.50 → 0.05) pushes recall toward 100% but collapses precision toward ~3% — confirms the model is better suited to **ranking** than a fixed 0.5 cutoff. Threshold choice should depend on marketing budget and cost/value tradeoffs, not a default.
+
+### Top-K Targeting & Lift
+| Top-K | XGBoost Lift | CatBoost Lift |
+|---:|---:|---:|
+| 1% | 1.918× | 1.744× |
+| 5% | 1.810× | 1.705× |
+| 10% | 1.426× | **1.548×** |
+| 20% | 1.313× | **1.461×** |
+| 50% | 1.231× | 1.242× |
+
+CatBoost outperforms XGBoost at broader targeting depths (10%+); XGBoost is stronger at the very top (1–5%).
+
+### Baseline Comparison (Simple Rule vs. ML) — Top 10%
+| Method | Capture Rate | Lift |
 |---|---:|---:|
-| Mean | 154.10 | 2.85 |
-| Median | 100.00 | 1 |
-| Minimum | 0.00 | 0 |
-| Maximum | 13,664.08 | 24 |
+| First-order total value | 8.87% | 0.887× |
+| First-order merchandise value | 9.22% | 0.922× |
+| **First-order items** | **14.61%** | **1.461×** |
+| XGBoost | 14.26% | 1.426× |
+| CatBoost | 15.48% | 1.548× |
 
-No negative payment values were found.
+**Important insight:** the simple "first-order item count" rule nearly matches XGBoost and comes close to CatBoost — **complex ML is not dramatically superior to a simple, explainable business rule** here. Purchase quantity is confirmed (again) as a strong, cheap, interpretable early signal.
 
-There were:
+### Recommended Production Workflow
+```
+Score customers → Rank by repeat-purchase probability → Select Top-K
+→ Target with retention campaign → Maintain control group → A/B test
+→ Measure incremental repeat-purchase rate (not raw capture)
+```
 
-- 9 zero-payment records
-- 2 records with invalid zero installments
+### Key Findings Summary
+1. Repeat purchasing is rare (3.08% of modeling population).
+2. First-order behavior does carry real, statistically validated signal (6 features significant post-FDR).
+3. Purchase quantity is a particularly strong and cheap signal.
+4. Higher first-order spend is NOT a positive predictor of repeat behavior.
+5. Purchase timing (month, hour) matters; state and day-of-week do not.
+6. Accuracy is a misleading model-selection metric in imbalanced problems.
+7. CatBoost = best ranking model; XGBoost = best F1/classification model.
+8. Overall predictive signal is real but weak (PR-AUC 0.0432 vs 3.08% base rate) — this is a **prioritization tool, not a deterministic predictor**.
 
-These records were flagged for further investigation.
-
----
-
-# 18. Chronological Consistency
-
-| Check | Records |
-|---|---:|
-| Approval before purchase | 0 |
-| Shipment before purchase | 166 |
-| Delivery before purchase | 0 |
-| Delivery before shipment | 23 |
-
-The problematic records are relatively small compared with the full dataset:
-
-- Shipment before purchase: 166 records
-- Delivery before shipment: 23 records
-
-These should be flagged as chronological anomalies rather than automatically removed.
+### Limitations
+Severe class imbalance; limited feature set (no category, payment type, channel, demographics, promo exposure); observational data (no causal claim); low absolute precision (~4%) at default threshold — many false positives if used as binary classifier; random (not temporal) train/test split — a production system should validate on a true future holdout; no probability calibration performed (Brier score / Platt scaling / isotonic regression recommended before treating scores as true probabilities).
 
 ---
+## Notebook 07 — Executive Synthesis & Retention Strategy
 
-# 19. Review Chronology
+**Purpose:** Notebook 07 is the **storytelling / executive synthesis notebook**. It introduces no new analysis — it takes the strongest findings from Notebooks 01–06 and assembles them into one coherent, end-to-end business narrative and decision framework.
 
-Reviews were checked against the order lifecycle.
+### What It Covers
 
-| Check | Records |
-|---|---:|
-| Review before purchase | 74 |
-| Review before approval | 33 |
-| Review before shipment | 296 |
-| Review before delivery | 8,320 |
+| Section | What It Covers |
+|---|---|
+| 1. LTV foundation | Reconstructed customer-level historical LTV and summarized customer value. |
+| 2. LTV distribution | Visualized LTV distribution and customer-value concentration. |
+| 3. Incentive economics | Visualized the economics of different incentive/conversion scenarios. |
+| 4. Scenario limitations | Explicitly established that incentive ROI scenarios are assumptions, **not causal evidence**. |
+| 5. A/B testing | Defined control vs. treatment, H₀/H₁, repeat conversion, incremental conversion lift, and business metrics. |
+| 6. ML performance | Compared Logistic Regression, Random Forest, XGBoost, LightGBM, CatBoost, and AdaBoost using F1, PR-AUC, and ROC-AUC. |
+| 7. Accuracy problem | Demonstrated why AdaBoost's **96.92% accuracy** is misleading when repeat customers are only **3.08%** of the population. |
+| 8. Top-K targeting | Compared XGBoost and CatBoost for targeting the highest-propensity customers. |
+| 9. CatBoost result | At Top-10%, CatBoost targeted **1,865 customers**, captured **89 repeat customers**, achieving **15.48% capture** and **1.548× lift**. |
+| 10. Baseline comparison | Compared ML against the simple **first-order item-count** rule. |
+| 11. ML vs. simple rule insight | Showed that first-order items achieved **1.461× lift** — very close to CatBoost's **1.548×**. |
+| 12. Final ML recommendation | CatBoost = primary ranking model; XGBoost = alternative classification model; simple item-count rule = important benchmark. |
+| 13. Full retention strategy | Connected **Identify → Segment → Rank → Target → Experiment → Measure → Improve** into a single operating loop. |
+| 14. Core product insight | Established that this is a **retention prioritization system**, not a perfect repeat-purchase predictor. |
+| 15. Evidence scorecard | Pulled the strongest numbers from the entire project into one summary. |
+| 16. Final recommendations | Converted the analytical findings into concrete, actionable business decisions. |
+| 17. Limitations | Covered observational data, class imbalance, weak predictive signal, LTV limitations, incentive assumptions, revenue vs. profit, and more. |
+| 18. Future roadmap | Proposed uplift modeling, time-to-event modeling, incentive optimization, profit-based optimization, production deployment, and continuous experimentation. |
 
-The review chronology requires caution because review creation dates do not necessarily
-represent the exact moment the customer received the product.
+### The Overall Story of Notebook 07
 
-Therefore, these records should be investigated before being classified as invalid.
+The notebook is structured as a chain of business questions, each answered by a prior notebook:
 
----
-
-# 20. Example Chronological Anomaly
-
-Order `73222` was identified with:
-
-- Purchase: 2017-09-29
-- Approval: 2017-09-29
-- Shipment: missing
-- Delivery: 2017-11-20
-- Estimated delivery: 2017-11-14
-
-The actual delivery occurred after the estimated delivery date.
-
-This is a useful example of why actual delivery performance should be compared with
-estimated delivery rather than assuming the estimated date represents the actual
-delivery.
-
----
-
-# 21. Order → Order Item Coverage
-
-| Check | Result |
-|---|---:|
-| Orders without order items | 775 |
-| Order items with unknown order | 0 |
-
-This means every order-item record belongs to a valid order, but 775 orders have no
-corresponding item record.
-
----
-
-# 22. Order → Payment Coverage
-
-| Check | Result |
-|---|---:|
-| Orders without payments | 1 |
-| Payments with unknown order | 0 |
-
-Payment records are therefore structurally valid, with one order lacking payment
-information.
-
----
-
-# 23. Order → Review Coverage
-
-| Check | Result |
-|---|---:|
-| Orders without reviews | 768 |
-| Reviews with unknown order | 0 |
-
-Not every order has a review, but every review belongs to a valid order.
-
-This is expected because leaving a review is optional.
-
----
-
-# 24. Financial Consistency
-
-Order-level item totals were compared with payment totals.
-
-For orders containing both item and payment records:
-
-| Metric | Result |
-|---|---:|
-| Orders with item records | 98,666 |
-| Orders with payment records | 99,440 |
-| Orders with both | 98,665 |
-| Exact matches | 98,284 |
-| Differences > $0.01 | 381 |
-| Maximum absolute difference | $182.81 |
-| Mean absolute difference | $0.033 |
-| Median absolute difference | $0.00 |
-
-Among the 381 discrepancies:
-
-| Relationship | Orders |
-|---|---:|
-| Payment > item total | 291 |
-| Payment < item total | 90 |
-
----
-
-# 25. Financial Discrepancy Range
-
-Only discrepancies greater than $0.01 were considered.
-
-| Metric | Difference |
-|---|---:|
-| Minimum absolute difference | $0.01 |
-| Maximum absolute difference | $182.81 |
-
-The 381 discrepancies should be flagged rather than automatically removed.
-
-Possible explanations include additional charges, discounts, vouchers, adjustments,
-rounding, or differences in how item and payment totals were recorded.
-
-However, because the other 98,284 orders match exactly, the discrepancies deserve
-additional investigation rather than being dismissed as universally applicable
-platform charges.
-
----
-
-# 26. Overall Data Integrity
-
-| Area | Finding | Action |
+| Question | Answer | Source |
 |---|---|---|
-| Duplicate records | Geolocation contains many duplicates | Investigate before use |
-| Missing order timestamps | Present across several statuses | Treat according to order lifecycle |
-| Delivered orders with missing timestamps | 24 total across relevant timestamp fields | Flag for investigation |
-| Invalid chronology | 166 shipment-before-purchase records | Flag |
-| Invalid chronology | 23 delivery-before-shipment records | Flag |
-| Missing payment | 1 order | Investigate |
-| Missing order items | 775 orders | Investigate before item-level analysis |
-| Missing reviews | 768 orders | Expected to some extent |
-| Payment discrepancies | 381 orders | Investigate |
-| Zero payments | 9 records | Investigate |
-| Invalid installments | 2 records | Investigate |
-| Customer-order matching | Complete | No action required |
-| Payment-order matching | Complete except one order | Flag one order |
-| Review-order matching | Complete | No action required |
+| **Who are our customers?** | Quantified via historical LTV | Notebook 02 |
+| **Who is worth retaining?** | High-value one-time customers | Notebook 02 / 03 |
+| **What do we know about their behavior?** | First-order behavioral and category-level signals | Notebook 03 / 05 / 06 |
+| **Can we intervene economically?** | Incentive scenario and ROI analysis | Notebook 03 / 04 |
+| **Can we prove the intervention works?** | A/B testing framework | Notebook 04 |
+| **Can we prioritize whom to target?** | ML-based ranking (CatBoost / XGBoost) | Notebook 06 |
+| **Does sophisticated ML definitely beat simple rules?** | Not by much — first-order item count is a surprisingly strong baseline (1.461× vs. CatBoost's 1.548×) | Notebook 06 |
+| **What should the business actually do?** | Target a limited high-potential segment, experiment with interventions, measure incremental impact, and scale only what works | Notebook 07 |
+
+### Why This Notebook Matters
+
+Notebook 07 is the **capstone** of the project. It doesn't add new numbers — it reframes every number from Notebooks 01–06 as part of a single, repeatable decision system:
+
+## Cross-Notebook Business Recommendations
+
+1. **Do not run universal checkout discounts.** Revenue and repeat-propensity are both highly concentrated; blanket incentives waste budget on customers unlikely to respond or of low economic value.
+2. **Primary target: the 45,432 "high-value, one-time" customers** — 47.28% of the customer base, 75.18% of historical revenue, and (per Notebook 04) 7.21× more likely to repeat than low-value customers.
+3. **Incentive sizing matters more than incentive presence.** Modeled ROI collapses from ~2,800% ($5 incentive) to 0% (~$147–149 incentive, the observed avg. second-order value). A $25 reference incentive was chosen as a strong, testable middle ground (~494% modeled ROI at 5% conversion).
+4. **No single fixed campaign window works.** Repeat purchases cluster early (36.6% within 7 days) but also occur many months later (14–15% after 180+ days) — supports a multi-stage engagement strategy (early nudge → mid-term reminder → long-term reactivation).
+5. **Category matters, but only 5 categories clear the bar** for statistically + commercially justified prioritization: bed_bath_table, computers_accessories, furniture_decor, fashion_bags_accessories, home_appliances (~22% of category revenue).
+6. **Use ML for ranking, not classification.** CatBoost (best AUC/PR-AUC) and XGBoost (best F1) should score and rank customers for Top-K campaign selection; a fixed 0.5 threshold produces unusable precision.
+7. **A simple "first-order item count" rule is a legitimate, cheap benchmark** — nearly matches ML lift at Top-10% (1.461× vs 1.548×) and should always be run alongside any ML system as a sanity check / fallback.
+8. **Every revenue/ROI number in this project is a scenario estimate, not a forecast.** The single most repeated caveat across all 6 notebooks: historical association is not causation. **The mandatory next step is a controlled A/B test** (control vs. treatment tiers) measuring incremental lift over a control group, not raw conversion counts.
 
 ---
 
-# Audit Conclusion
+## Key Numbers Cheat Sheet
 
-The dataset is structurally usable for further analysis, but several data-quality issues
-were identified.
-
-The most important findings are:
-
-1. Customer-to-order relationships are complete.
-2. Payment-to-order relationships are almost complete, with one missing payment record.
-3. Review and order-item records do not exist for every order.
-4. A small number of order timestamps violate the expected chronological sequence.
-5. Some delivered orders have missing lifecycle timestamps.
-6. 381 orders have differences between item-derived totals and payment totals.
-7. Customer-level analysis should use `customer_unique_id` rather than `customer_id`.
-8. The customer base is dominated by one-time purchasers.
-9. SP, RJ and MG dominate customer and order activity.
-10. Geolocation contains substantial duplication and requires additional validation.
-11. Several anomalous records should be flagged rather than blindly deleted.
-
-No records were automatically deleted solely because they were anomalous. The purpose of
-the audit is to identify potential data-quality problems while preserving the original
-data for downstream analysis.
-
-These findings will be considered when preparing the data for:
-
-- LTV modeling
-- A/B testing
-- Checkout incentive analysis
-- Customer segmentation
-- Product and business analysis
-
-
-# 02 — Customer Lifetime Value (LTV) Modeling
-
-## 1. Objective
-
-The purpose of this notebook is to quantify the **economic value of customers** and identify customer segments that are most relevant for targeted checkout incentives.
-
-The analysis answers:
-
-* How much revenue does the average customer generate?
-* How many customers make only one purchase versus repeat purchases?
-* Do repeat customers generate substantially higher LTV?
-* How concentrated is revenue among high-value customers?
-* What does customer lifetime look like?
-* How quickly do customers make a second purchase?
-* Which customer segments should be prioritized for incentives?
-* Are there high-value customers who have purchased only once and therefore represent potential repeat-purchase opportunities?
-
-The notebook converts transaction-level order/payment data into a **customer-level LTV dataset** and then performs segmentation and revenue-concentration analysis.
+- Total customers (unique): **96,096** | Total historical revenue: **$16.01M**
+- One-time customers: **93,099 (96.88%)** | Repeat customers: **2,997 (3.12%)**
+- Avg LTV: one-time **$161.82** vs repeat **$314.99** (1.95× / 2.14× median)
+- Top 20% of customers generate **53.77%** of revenue
+- High-value threshold: **$319.57** → 9,611 customers (10%) generate **38.52%** of revenue
+- **Target segment (high-value one-time): 45,432 customers, 47.28% of base, 75.18% of revenue**
+- High-value repeat rate **5.48%** vs low-value **0.76%** → **7.21× lift**
+- Avg 2nd-order value: **~$146.94–148.51**
+- Reference incentive: **$25** → modeled ROI **~494%** at 5% conversion (2,272 conversions, ~$337K revenue, ~$281K net)
+- Category repeat-item baseline: **6.72%**; 5 High-Priority categories = **21.98%** of category revenue
+- ML repeat-prediction base rate: **3.08%**; best model (CatBoost) ROC-AUC **0.5770**, PR-AUC **0.0432**, Top-10% lift **1.548×**
 
 ---
 
-# 2. Data Used
+## Limitations (Project-Wide)
 
-The analysis is based on the Olist e-commerce transactional dataset.
-
-The main information required for LTV modeling is:
-
-| Data          | Purpose                                     |
-| ------------- | ------------------------------------------- |
-| Customer data | Identify unique customers                   |
-| Orders data   | Determine purchases and purchase timestamps |
-| Payments data | Calculate customer revenue/spend            |
-
-The analysis uses `customer_unique_id` rather than `customer_id`.
-
-### Why `customer_unique_id`?
-
-`customer_id` represents an individual customer record associated with an order, whereas `customer_unique_id` identifies the underlying customer across the dataset.
-
-Therefore:
-
-> **LTV must be calculated at the `customer_unique_id` level**, otherwise repeat purchases by the same customer could incorrectly appear as separate customers.
+- All findings are **observational**, not experimental — no causal claims are made anywhere in the project.
+- Revenue ≠ profit: no cost of goods, margin, discount cost, or fulfillment cost is netted out anywhere except in the explicit ROI-vs-incentive-cost scenarios.
+- Historical repeat rate and second-order value are backward-looking baselines, not guaranteed future outcomes.
+- ML predictive signal, while statistically real, is weak in absolute terms (PR-AUC 0.0432) — suitable for **ranking/prioritization**, not deterministic prediction.
+- Data anomalies (missing timestamps, financial discrepancies, chronological inconsistencies) were flagged, not removed — downstream models inherit this uncertainty.
+- Geolocation data has known quality issues and should not be used for geospatial modeling without further validation.
+- **The single overriding recommendation across every notebook: validate everything via a controlled A/B experiment before production deployment.**
 
 ---
 
-# 3. Customer-Level LTV Dataset
+## Tech Stack
+* **Language:** Python
+* **Data Manipulation:** Pandas, NumPy
+* **Visualization:** Matplotlib, Seaborn
+* **Statistical Analysis:** SciPy, Statsmodels — Mann–Whitney U test, Chi-square test, Benjamini–Hochberg FDR correction
+* **Machine Learning:** Scikit-learn — Logistic Regression, Random Forest, AdaBoost; XGBoost 3.4.1; LightGBM 4.7.0; CatBoost 1.2.10
+* **Dataset:** Olist Brazilian E-Commerce Public Dataset
 
-Each customer was aggregated into a single record containing:
 
-| Column               | Meaning                                       |
-| -------------------- | --------------------------------------------- |
-| `customer_unique_id` | Unique customer identifier                    |
-| `orders`             | Number of distinct orders                     |
-| `total_spend`        | Total payment value generated by the customer |
-| `first_purchase`     | Timestamp of first purchase                   |
-| `last_purchase`      | Timestamp of last purchase                    |
-| `lifetime_days`      | Days between first and last purchase          |
-
-### LTV definition
-
-For this project, historical customer LTV is defined as:
-
-> **LTV = total amount spent by a customer across all recorded orders**
-
-This is an observed/historical LTV measure rather than a future-value prediction.
-
-### Why use total payment value?
-
-Payment value represents the actual monetary value associated with the customer's purchases and therefore provides the most direct measure of customer revenue contribution available in the dataset.
-
----
-
-# 4. Overall Customer LTV
-
-| Metric          |            Result |
-| --------------- | ----------------: |
-| Total customers |        **96,096** |
-| Total revenue   | **16,008,872.12** |
-| Average LTV     |        **166.59** |
-| Median LTV      |        **108.00** |
-| Minimum LTV     |          **0.00** |
-| Maximum LTV     |     **13,664.08** |
-
-### Interpretation
-
-The average customer generated approximately **166.59** in historical revenue.
-
-However, the median is only **108.00**, substantially below the mean.
-
-This indicates that customer spending is **right-skewed**: a relatively small number of customers spend substantially more than the typical customer.
-
-The maximum observed LTV of **13,664.08** further confirms the presence of extremely high-spending customers.
-
-### Why report both mean and median?
-
-The mean is useful for estimating aggregate economic value, while the median better represents the typical customer because it is less affected by extreme spending values.
-
----
-
-# 5. One-Time vs Repeat Customers
-
-Customers were classified as:
-
-* **One-time:** exactly 1 order
-* **Repeat:** more than 1 order
-
-| Customer type |  Customers | % of customers | Avg orders |    Avg LTV | Median LTV |
-| ------------- | ---------: | -------------: | ---------: | ---------: | ---------: |
-| One-time      | **93,099** |     **96.88%** |      1.000 | **161.82** | **105.70** |
-| Repeat        |  **2,997** |      **3.12%** |      2.116 | **314.99** | **225.84** |
-
-### Key finding
-
-Only **3.12%** of customers made more than one purchase.
-
-However, repeat customers have:
-
-* approximately **1.95× higher average LTV**
-* approximately **2.14× higher median LTV**
-
-than one-time customers.
-
-### Why is this important?
-
-This is one of the most important findings for the incentive problem.
-
-A customer who makes a second purchase is considerably more valuable on average than a customer who purchases only once.
-
-Therefore, encouraging selected one-time customers to return can potentially create significant incremental value.
-
----
-
-# 6. Revenue Contribution by Customer Type
-
-| Customer type | Customers | Customer % |       Revenue |  Revenue % |
-| ------------- | --------: | ---------: | ------------: | ---------: |
-| One-time      |    93,099 | **96.88%** | 15,064,849.41 | **94.10%** |
-| Repeat        |     2,997 |  **3.12%** |    944,022.71 |  **5.90%** |
-
-### Interpretation
-
-The majority of historical revenue comes from one-time customers simply because they represent almost the entire customer base.
-
-However, this should **not** be interpreted as one-time customers being more valuable individually.
-
-At the individual-customer level:
-
-**Repeat LTV = 314.99**
-
-versus
-
-**One-time LTV = 161.82**
-
-Therefore:
-
-> Repeat customers are individually more valuable, even though they represent only a small proportion of the customer base.
-
-This distinction is important when designing targeted incentives.
-
----
-
-# 7. LTV Distribution
-
-Customers were divided into LTV bands.
-
-| LTV band  | Customers | % of customers |
-| --------- | --------: | -------------: |
-| <50       |    15,849 |     **16.49%** |
-| 50–100    |    28,546 |     **29.71%** |
-| 100–250   |    37,454 |     **38.98%** |
-| 250–500   |     9,758 |     **10.15%** |
-| 500–1000  |     3,271 |      **3.40%** |
-| 1000–2000 |       993 |      **1.03%** |
-| 2000+     |       225 |      **0.23%** |
-
-### Interpretation
-
-The largest customer group falls into the **100–250 LTV range**, representing **38.98%** of customers.
-
-Approximately:
-
-* **46.20%** have LTV below 100.
-* **38.98%** have LTV between 100 and 250.
-* **10.15%** have LTV between 250 and 500.
-* Only **4.67%** have LTV above 500.
-
-This demonstrates that extremely high-value customers are relatively rare.
-
----
-
-# 8. Revenue Concentration
-
-Revenue concentration was measured by calculating the percentage of total revenue generated by the highest-value customers.
-
-| Customer segment | Revenue contribution |
-| ---------------- | -------------------: |
-| Top 1%           |           **10.48%** |
-| Top 5%           |           **27.04%** |
-| Top 10%          |           **38.51%** |
-| Top 20%          |           **53.77%** |
-
-### Interpretation
-
-The top **20% of customers generate 53.77% of revenue**.
-
-The top **10% generate 38.51%**.
-
-The top **5% generate 27.04%**.
-
-This demonstrates strong **revenue concentration**.
-
-### Business implication
-
-Not every customer should necessarily receive the same incentive.
-
-A blanket incentive strategy could waste budget on customers with little incremental value.
-
-A more efficient strategy is to identify customers according to their expected economic value and likelihood of responding to an incentive.
-
----
-
-# 9. LTV by Number of Orders
-
-| Orders | Customers |  Avg LTV | Median LTV | Total revenue |
-| -----: | --------: | -------: | ---------: | ------------: |
-|      1 |    93,099 |   161.82 |     105.70 | 15,064,849.41 |
-|      2 |     2,745 |   294.85 |     217.74 |    809,355.39 |
-|      3 |       203 |   473.39 |     342.48 |     96,097.83 |
-|      4 |        30 |   779.13 |     537.72 |     23,373.88 |
-|      5 |         8 |   759.66 |     674.66 |      6,077.25 |
-|      6 |         6 |   696.25 |     743.63 |      4,177.51 |
-|      7 |         3 |   946.85 |     959.01 |      2,840.56 |
-|      9 |         1 | 1,172.66 |   1,172.66 |      1,172.66 |
-|     17 |         1 |   927.63 |     927.63 |        927.63 |
-
-### Interpretation
-
-The general pattern is clear:
-
-> **More purchases are associated with higher customer LTV.**
-
-For example:
-
-* 1-order customers → **161.82 average LTV**
-* 2-order customers → **294.85**
-* 3-order customers → **473.39**
-* 4-order customers → **779.13**
-
-The small irregularities at very high order counts are caused by extremely small sample sizes.
-
-For example, only **1 customer** made 17 orders.
-
-Therefore, those extreme groups should not be treated as statistically representative.
-
----
-
-# 10. High-Value Customer Threshold
-
-A high-value threshold was established at:
-
-> **LTV = 319.57**
-
-Customers above this threshold were classified as **high-value**.
-
-| Segment    |  Customers |    Avg LTV | Median LTV |          Revenue |  Revenue % |
-| ---------- | ---------: | ---------: | ---------: | ---------------: | ---------: |
-| High-value |  **9,611** | **641.55** | **476.14** | **6,165,903.93** | **38.52%** |
-| Standard   | **86,485** | **113.81** |  **97.77** | **9,842,968.19** | **61.48%** |
-
-### Interpretation
-
-Only approximately **10% of customers** are classified as high-value.
-
-Yet they generate approximately **38.52% of total revenue**.
-
-This confirms that customer value is highly concentrated.
-
-### Business implication
-
-High-value customers deserve differentiated treatment because losing or successfully retaining one of these customers can have a much larger financial impact than doing the same with a low-value customer.
-
----
-
-# 11. Customer Lifetime
-
-Customer lifetime was calculated as:
-
-> **last purchase timestamp − first purchase timestamp**
-
-| Customer type | Customers |   Avg lifetime | Median lifetime |
-| ------------- | --------: | -------------: | --------------: |
-| One-time      |    93,099 |     **0 days** |      **0 days** |
-| Repeat        |     2,997 | **87.31 days** |  **33.66 days** |
-
-### Why do one-time customers have 0 lifetime?
-
-For a one-time customer:
-
-`first_purchase = last_purchase`
-
-Therefore:
-
-`lifetime_days = 0`
-
-This is expected behavior and is **not missing data**.
-
-### Interpretation
-
-Repeat customers have substantially longer observed customer lifetimes.
-
-The median repeat-customer lifetime is approximately **33.66 days**, while the mean is **87.31 days**.
-
-The difference between mean and median indicates that some repeat customers remain active for substantially longer periods.
-
----
-
-# 12. Time to Second Purchase
-
-For repeat customers, the time between the first and second purchase was calculated.
-
-| Metric                          |          Result |
-| ------------------------------- | --------------: |
-| Customers with repeat purchase  |       **2,997** |
-| Average days to second purchase |  **80.35 days** |
-| Median days to second purchase  |  **27.92 days** |
-| Minimum                         |      **0 days** |
-| Maximum                         | **608.98 days** |
-
-### Interpretation
-
-The median customer who makes a second purchase does so in approximately **28 days**.
-
-However, the average is much higher at **80.35 days**.
-
-This indicates a strongly right-skewed distribution: some customers return very quickly, while others return many months later.
-
----
-
-# 13. Second-Purchase Timing Distribution
-
-| Time to second purchase | Customers | Percentage |
-| ----------------------- | --------: | ---------: |
-| 1–7 days                | **1,097** | **36.60%** |
-| 8–14 days               |       166 |  **5.54%** |
-| 15–30 days              |       267 |  **8.91%** |
-| 31–60 days              |       320 | **10.68%** |
-| 61–90 days              |       208 |  **6.94%** |
-| 91–180 days             |       424 | **14.15%** |
-| 181–365 days            |       427 | **14.25%** |
-| 365+ days               |        88 |  **2.94%** |
-
-### Key finding
-
-**36.60% of repeat customers made their second purchase within 7 days.**
-
-Approximately:
-
-* **51.1%** returned within 30 days.
-* **61.8%** returned within 60 days.
-* **68.7%** returned within 90 days.
-* **82.8%** returned within 180 days.
-* **97.1%** returned within one year.
-
-### Business implication
-
-The first few weeks after purchase represent an important potential intervention period.
-
-However, the existence of customers returning months later means that a single fixed incentive window would not capture every repeat-purchase opportunity.
-
----
-
-# 14. Incentive Segmentation
-
-Customers were divided using two dimensions:
-
-1. Customer value — high-value vs low-value
-2. Purchase behavior — one-time vs repeat
-
-This produced four actionable segments.
-
-| Segment             |  Customers | Customer % | Avg orders |    Avg LTV | Median LTV |           Revenue |  Revenue % |
-| ------------------- | ---------: | ---------: | ---------: | ---------: | ---------: | ----------------: | ---------: |
-| High-value one-time | **45,432** | **47.28%** |       1.00 | **264.91** |     180.21 | **12,035,546.53** | **75.18%** |
-| High-value repeat   |  **2,634** |  **2.74%** |      2.129 | **347.05** |     251.98 |    **914,135.72** |  **5.71%** |
-| Low-value one-time  | **47,667** | **49.60%** |       1.00 |  **63.55** |      63.00 |  **3,029,302.88** | **18.92%** |
-| Low-value repeat    |    **363** |  **0.38%** |      2.022 |  **82.33** |      85.07 |     **29,886.99** |  **0.19%** |
-
----
-
-# 15. Most Important Segmentation Finding
-
-The **high-value one-time** segment is particularly important.
-
-It contains:
-
-* **45,432 customers**
-* **47.28% of the customer base**
-* **75.18% of total revenue**
-* Average LTV = **264.91**
-
-These customers have already demonstrated substantial monetary value but have made only one purchase.
-
-Therefore, they represent a potentially valuable **conversion-to-repeat** segment.
-
-### Why?
-
-They satisfy two desirable conditions:
-
-**High historical value + no repeat purchase yet**
-
-This makes them potentially more attractive incentive targets than low-value one-time customers.
-
----
-
-# 16. Low-Value Customers
-
-The low-value one-time segment contains:
-
-**47,667 customers**
-
-and contributes only:
-
-**18.92% of revenue.**
-
-Their average LTV is only:
-
-**63.55**
-
-Therefore, spending large incentive budgets on this group could produce poor ROI unless there is evidence that incentives significantly increase their probability of repurchasing.
-
----
-
-# 17. High-Value Repeat Customers
-
-High-value repeat customers represent:
-
-**2,634 customers (2.74% of the customer base)**
-
-and generate:
-
-**5.71% of total revenue.**
-
-Their average LTV is:
-
-**347.05**
-
-These customers have already demonstrated repeat behavior.
-
-Therefore, their incentive strategy should potentially focus more on **retention** rather than simply trying to induce a first repeat purchase.
-
----
-
-# 18. Low-Value Repeat Customers
-
-The low-value repeat segment contains only:
-
-**363 customers (0.38%)**
-
-and contributes:
-
-**0.19% of total revenue.**
-
-Their average LTV is:
-
-**82.33**
-
-This is a relatively low-priority segment for expensive incentives because its historical revenue contribution is extremely small.
-
----
-
-# 19. Highest-Value Customers
-
-The top customer records were inspected to identify extreme-value customers.
-
-The largest observed customer had:
-
-**LTV = 13,664.08**
-
-Other extremely high-value customers included customers with LTVs above:
-
-* 9,500
-* 7,500
-* 7,000
-* 6,900
-* 6,700
-* 6,000
-* 4,800
-* 4,500
-
-### Interpretation
-
-The extreme values confirm that the customer-value distribution has a long right tail.
-
-These customers should not automatically be removed as outliers because they represent genuine revenue generated by the business.
-
-Instead, they demonstrate why median-based statistics and segmentation are useful alongside averages.
-
----
-
-# 20. Important Data Quality/Interpretation Notes
-
-| Observation                                         | Interpretation                                                                            |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| One-time lifetime = 0                               | Expected because first and last purchases are identical                                   |
-| Minimum LTV = 0                                     | Can occur because payment/order aggregation includes zero-value transactions              |
-| Very high LTV values                                | Genuine high-spend observations; should not automatically be deleted                      |
-| Mean LTV > median LTV                               | Indicates right-skewed customer spending                                                  |
-| Mean repeat lifetime > median                       | Indicates a long right tail in customer retention                                         |
-| Very high order-count groups have tiny sample sizes | Their averages should not be generalized                                                  |
-| Repeat customers are few                            | Repeat behavior is rare in the observed dataset                                           |
-| Repeat customers have higher LTV                    | Strong evidence of association, not proof that repeat purchasing itself causes higher LTV |
-
----
-
-# 21. Core Business Findings
-
-| Finding                                                   | Evidence                          | Business meaning                                                               |
-| --------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------------------------ |
-| Customer spending is highly skewed                        | Mean LTV 166.59 vs median 108.00  | A minority of customers generate disproportionately high value                 |
-| Repeat customers are more valuable                        | Avg LTV 314.99 vs 161.82          | Repeat purchase behavior is strongly associated with higher customer value     |
-| Repeat customers are rare                                 | 3.12% of customers                | Increasing repeat-purchase rate represents a potentially important opportunity |
-| Revenue is concentrated                                   | Top 20% → 53.77% revenue          | Customer targeting should be value-aware                                       |
-| High-value customers are a minority                       | 9,611 customers                   | High-value segmentation can reduce inefficient blanket incentives              |
-| High-value customers generate substantial revenue         | 38.52% of revenue                 | Retention of high-value customers is economically important                    |
-| High-value one-time customers are particularly attractive | 47.28% customers → 75.18% revenue | Potentially valuable population for repeat-purchase conversion                 |
-| Low-value one-time customers have low LTV                 | Avg LTV 63.55                     | Expensive incentives may have limited economic justification                   |
-| Many repeat purchases happen quickly                      | 36.60% within 7 days              | Early post-purchase period may be an important intervention window             |
-| Repeat purchases also occur much later                    | 14.25% at 181–365 days            | Incentive timing should not assume every customer behaves on the same schedule |
-
----
-
-# 22. What This Notebook Establishes
-
-The analysis establishes four important facts for the next stage of the project:
-
-### 1. Customer value is heterogeneous
-
-Customers do not contribute equal amounts of revenue.
-
-A small fraction generates a disproportionately large share of revenue.
-
-### 2. Repeat purchasing is strongly associated with higher LTV
-
-Repeat customers have approximately twice the average historical LTV of one-time customers.
-
-### 3. One-time customers cannot be treated equally
-
-A customer with historical LTV of 50 and a customer with historical LTV of 300 should not necessarily receive the same incentive.
-
-### 4. Incentives should be targeted
-
-The analysis supports moving away from:
-
-> "Give every customer a discount."
-
-toward:
-
-> "Identify customers where an incentive is likely to generate enough incremental value to justify its cost."
-
----
-
-# 23. Limitations of This LTV Analysis
-
-This notebook calculates **historical LTV**, not predicted future LTV.
-
-Therefore:
-
-* It does not predict whether a customer will purchase again.
-* It does not estimate the probability of responding to an incentive.
-* It does not calculate incremental revenue caused by an incentive.
-* It does not establish causality between incentives and repeat purchases.
-* It does not account for profit margin unless margin data is introduced.
-* It does not subtract incentive/discount cost.
-* It does not explicitly model customer churn probability.
-
-These limitations are intentional.
-
-The purpose of this notebook is to establish the **economic/customer-value foundation** for subsequent modeling.
-
----
-
-# 24. Final Conclusion
-
-The LTV analysis reveals a highly uneven customer-value distribution.
-
-There are **96,096 customers** generating approximately **16.01 million** in historical revenue. Although **96.88%** of customers are one-time purchasers, repeat customers have substantially higher individual LTV.
-
-Only **3.12%** of customers are repeat purchasers, yet their average LTV is approximately **315**, compared with approximately **162** for one-time customers.
-
-Revenue is also highly concentrated: the top **10% of customers generate 38.51% of revenue**, while the top **20% generate 53.77%**.
-
-The most strategically important segment is the **high-value one-time customer group**. These customers represent **47.28% of the customer base but account for 75.18% of revenue**, while having made only one purchase.
-
-This makes them a particularly important population for the next stage of the project: determining **which customers should receive checkout incentives and whether the expected incremental value can justify the incentive cost**.
-
-Therefore, `02_ltv_modeling` provides the customer-value foundation required for the subsequent incentive-targeting/modeling stage.
