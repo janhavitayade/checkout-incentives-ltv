@@ -22,11 +22,11 @@ The project answers one central business question:
 5. [Notebook 04 — High-Value Customer Conversion & Incentive Economics](#notebook-04--high-value-customer-conversion--incentive-economics)
 6. [Notebook 05 — Product Category Retention Analysis](#notebook-05--product-category-retention-analysis)
 7. [Notebook 06 — Customer Repeat-Purchase Prediction (ML)](#notebook-06--customer-repeat-purchase-prediction-ml)
-8. Notebook 07 — Executive Synthesis & Retention Strategy
-8. [Cross-Notebook Business Recommendations](#cross-notebook-business-recommendations)
-9. [Key Numbers Cheat Sheet](#key-numbers-cheat-sheet)
-10. [Limitations (Project-Wide)](#limitations-project-wide)
-11. [Tech Stack](#tech-stack)
+8. [Notebook 07 — Executive Synthesis & Retention Strategy](#notebook-07--executive-synthesis--retention-strategy)
+9. [Cross-Notebook Business Recommendations](#cross-notebook-business-recommendations)
+10. [Key Numbers Cheat Sheet](#key-numbers-cheat-sheet)
+11. [Limitations (Project-Wide)](#limitations-project-wide)
+12. [Tech Stack](#tech-stack)
 
 ---
 
